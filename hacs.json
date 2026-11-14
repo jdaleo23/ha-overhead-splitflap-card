@@ -1,0 +1,6 @@
+{
+  "name": "Overhead Split-Flap Radar Card",
+  "filename": "overhead-splitflap-card.js",
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}
