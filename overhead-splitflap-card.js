@@ -20,7 +20,9 @@ class OverheadSplitflapCard extends HTMLElement {
     let defaultEntity = 'sensor.flightradar24_current_in_area';
     if (hass && hass.states && !hass.states[defaultEntity]) {
       const candidate = Object.keys(hass.states).find(
-        (id) => id.startsWith('sensor.') && (id.includes('flightradar24') || id.includes('adsb'))
+        (id) =>
+          id.startsWith('sensor.') &&
+          (id.includes('flightradar24') || id.endsWith('_nearest_aircraft') || id.endsWith('_closest_aircraft'))
       );
       if (candidate) defaultEntity = candidate;
     }
@@ -126,56 +128,197 @@ class OverheadSplitflapCard extends HTMLElement {
       'UNAVAILABLE',
       'UNKNOWN',
       'NONE',
+      'N/A',
       'NO AIRCRAFT',
       'NO AIRCRAFT DETECTED',
       '0 AIRCRAFT',
       '0',
     ];
-    return inactive.includes(stateVal);
+    return inactive.includes(stateVal) || /^\d+\s+AIRCRAFT\s+DETECTED$/i.test(stateVal);
+  }
+
+  _pickValidCallsign(...candidates) {
+    const invalid = new Set(['', 'N/A', 'NONE', 'UNKNOWN', 'BLOCKED', 'NULL', 'UNDEFINED']);
+    for (const val of candidates) {
+      if (val == null) continue;
+      const clean = String(val).trim().toUpperCase();
+      if (!invalid.has(clean) && !/^\d+\s+AIRCRAFT\s+DETECTED$/i.test(clean)) {
+        return clean;
+      }
+    }
+    return 'PRIVATE JET';
+  }
+
+  _extractNumberedAircraft(attrs) {
+    if (!attrs || typeof attrs !== 'object') return [];
+    return Object.keys(attrs)
+      .filter((key) => /^aircraft_\d+$/.test(key) && attrs[key] && typeof attrs[key] === 'object')
+      .sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]))
+      .map((key) => attrs[key]);
   }
 
   _normalizeAdsbItem(f, fallbackCallsign = '') {
-    const rawCallsign =
-      f.flight || f.callsign || f.r || f.registration || fallbackCallsign || f.hex || f.icao || 'UNKNOWN';
-    const alt = f.alt_baro != null ? f.alt_baro : f.altitude;
-    const spd = f.gs != null ? f.gs : f.ground_speed;
-    const dst = f.dst != null ? f.dst : f.distance;
-    const hdg = f.track != null ? f.track : f.heading;
+    const rawCallsign = this._pickValidCallsign(
+      f.flight,
+      f.callsign,
+      f.tail,
+      f.r,
+      f.registration,
+      fallbackCallsign,
+      f.hex,
+      f.icao
+    );
+    const alt = f.altitude_ft != null ? f.altitude_ft : f.alt_baro != null ? f.alt_baro : f.altitude;
+    const spd = f.speed_kts != null ? f.speed_kts : f.gs != null ? f.gs : f.ground_speed;
+    const hdg = f.heading != null ? f.heading : f.track;
+
+    let numericDst = NaN;
+    if (f.distance_km != null && !Number.isNaN(Number(f.distance_km))) {
+      numericDst = Number(f.distance_km) * 0.621371;
+    } else if (f.dst != null) {
+      numericDst = Number(f.dst);
+    } else if (f.distance != null) {
+      numericDst = Number(f.distance);
+    }
+
+    const numericAlt = typeof alt === 'number' ? alt : alt === 'ground' ? 0 : Number(alt);
+    const numericSpd = spd != null ? Number(spd) : NaN;
+    const numericHdg = hdg != null ? Number(hdg) : NaN;
+    const latVal = f.latitude != null ? Number(f.latitude) : f.lat != null ? Number(f.lat) : NaN;
+    const lonVal = f.longitude != null ? Number(f.longitude) : f.lon != null ? Number(f.lon) : NaN;
+
+    const cleanReg = this._pickValidCallsign(f.tail, f.r, f.registration);
 
     return {
-      callsign: String(rawCallsign).trim().toUpperCase(),
-      airline: String(f.ownOp || f.operator || '').toUpperCase(),
-      origin: String(f.origin || '').toUpperCase(),
-      dest: String(f.destination || '').toUpperCase(),
-      aircraftCode: String(f.t || f.type || f.aircraft_type || 'N/A').toUpperCase(),
-      aircraftModel: String(f.desc || f.aircraft_model || '').toUpperCase(),
-      reg: String(f.r || f.registration || '').toUpperCase(),
-      heading: hdg != null ? `${Math.round(Number(hdg))}DEG` : '',
-      altitude: alt != null ? (typeof alt === 'number' ? `${Math.round(alt)}FT` : `${alt}FT`) : 'GND',
-      speed: spd != null ? `${Math.round(Number(spd))}KT` : '--KT',
-      distance: dst != null ? `${Number(dst).toFixed(1)}MI` : '',
+      callsign: rawCallsign,
+      airline: String(f.operator || f.ownOp || '').toUpperCase(),
+      origin: String(f.origin_iata || f.origin_icao || f.origin || '').toUpperCase(),
+      dest: String(f.destination_iata || f.destination_icao || f.destination || '').toUpperCase(),
+      aircraftCode: String(f.aircraft_type || f.t || f.type || 'N/A').trim().toUpperCase(),
+      aircraftModel: String(f.aircraft_description || f.desc || f.aircraft_model || '').toUpperCase(),
+      reg: cleanReg === 'PRIVATE JET' ? '' : cleanReg,
+      heading: !Number.isNaN(numericHdg) ? `${Math.round(numericHdg)}DEG` : '',
+      altitude: !Number.isNaN(numericAlt) ? (numericAlt <= 0 ? 'GND' : `${Math.round(numericAlt)}FT`) : 'GND',
+      speed: !Number.isNaN(numericSpd) ? `${Math.round(numericSpd)}KT` : '--KT',
+      distance: !Number.isNaN(numericDst) ? `${numericDst.toFixed(1)}MI` : '',
       depTime: '',
       arrTime: '',
+      _rawAlt: numericAlt,
+      _rawSpd: numericSpd,
+      _rawHdg: numericHdg,
+      _rawDst: numericDst,
+      _lat: latVal,
+      _lon: lonVal,
     };
   }
 
-  _getAdsbFallback() {
-    if (!this._config.adsb_entity || !this._hass) return null;
+  _getAdsbPool() {
+    if (!this._config.adsb_entity || !this._hass) return [];
     const adsbState = this._hass.states[this._config.adsb_entity];
-    if (!adsbState) return null;
+    if (!adsbState) return [];
 
     const stateVal = String(adsbState.state || '').trim().toUpperCase();
     const attrs = adsbState.attributes || {};
+
+    // 1. adsb_nearby "Nearest Aircraft" numbered keys (aircraft_1, aircraft_2, ...)
+    const numberedList = this._extractNumberedAircraft(attrs);
+    if (numberedList.length > 0) {
+      return numberedList.map((item) => this._normalizeAdsbItem(item));
+    }
+
+    // 2. Array-based ADS-B attributes (aircraft or nearby)
     const list = Array.isArray(attrs.aircraft) ? attrs.aircraft : Array.isArray(attrs.nearby) ? attrs.nearby : [];
-
     if (list.length > 0) {
-      return this._normalizeAdsbItem(list[0], stateVal);
+      return list.map((item) => this._normalizeAdsbItem(item));
     }
 
+    // 3. Single aircraft sensor fallback (e.g., Closest Aircraft)
     if (!this._isInactiveState(stateVal)) {
-      return this._normalizeAdsbItem(attrs, stateVal);
+      return [this._normalizeAdsbItem(attrs, stateVal)];
     }
-    return null;
+    return [];
+  }
+
+  _matchAdsbFlight(frFlight, adsbPool, excludedCallsigns) {
+    if (!adsbPool.length) return null;
+
+    const frType = (frFlight.aircraft_code || '').trim().toUpperCase();
+    const frAlt = frFlight.altitude != null ? Number(frFlight.altitude) : NaN;
+    const frSpd = frFlight.ground_speed != null ? Number(frFlight.ground_speed) : NaN;
+    const frHdg = frFlight.heading != null ? Number(frFlight.heading) : NaN;
+    const frLat = frFlight.latitude != null ? Number(frFlight.latitude) : NaN;
+    const frLon = frFlight.longitude != null ? Number(frFlight.longitude) : NaN;
+    const frDst = frFlight.distance != null ? Number(frFlight.distance) : NaN;
+
+    let bestMatch = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of adsbPool) {
+      if (!candidate.callsign || candidate.callsign === 'PRIVATE JET') continue;
+      if (excludedCallsigns.has(candidate.callsign)) continue;
+
+      let score = 0;
+
+      // 1. Aircraft ICAO type check (strongest discriminator)
+      const candType = candidate.aircraftCode;
+      if (frType && frType !== 'N/A' && candType && candType !== 'N/A') {
+        if (frType === candType) {
+          score += 100;
+        } else {
+          continue;
+        }
+      }
+
+      // 2. Geographic proximity (separates two identical aircraft models in different spots)
+      if (
+        !Number.isNaN(frLat) &&
+        !Number.isNaN(frLon) &&
+        !Number.isNaN(candidate._lat) &&
+        !Number.isNaN(candidate._lon)
+      ) {
+        const dLat = (frLat - candidate._lat) * 69.0;
+        const dLon = (frLon - candidate._lon) * 54.6;
+        const distMiles = Math.hypot(dLat, dLon);
+        if (distMiles <= 5) score += 45;
+        else if (distMiles <= 12) score += 20;
+        else if (distMiles > 25) score -= 40;
+      } else if (!Number.isNaN(frDst) && !Number.isNaN(candidate._rawDst)) {
+        const dstDiff = Math.abs(frDst - candidate._rawDst);
+        if (dstDiff <= 3) score += 30;
+        else if (dstDiff <= 8) score += 10;
+        else if (dstDiff > 15) score -= 30;
+      }
+
+      // 3. Compass heading / track tolerance (within +/- 25 deg)
+      if (!Number.isNaN(frHdg) && !Number.isNaN(candidate._rawHdg)) {
+        const rawDiff = Math.abs(frHdg - candidate._rawHdg) % 360;
+        const hdgDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
+        if (hdgDiff <= 25) score += 25;
+        else if (hdgDiff <= 50) score += 5;
+        else score -= 35;
+      }
+
+      // 4. Wide altitude & speed bands (absorbs polling lag between sources)
+      if (!Number.isNaN(frAlt) && !Number.isNaN(candidate._rawAlt)) {
+        const altDiff = Math.abs(frAlt - candidate._rawAlt);
+        if (altDiff <= 2500) score += 20;
+        else if (altDiff <= 5000) score += 5;
+        else score -= 40;
+      }
+
+      if (!Number.isNaN(frSpd) && !Number.isNaN(candidate._rawSpd)) {
+        const spdDiff = Math.abs(frSpd - candidate._rawSpd);
+        if (spdDiff <= 60) score += 15;
+        else if (spdDiff > 120) score -= 25;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = candidate;
+      }
+    }
+
+    return bestScore >= 80 ? bestMatch : null;
   }
 
   _extractFlights(stateObj) {
@@ -185,15 +328,30 @@ class OverheadSplitflapCard extends HTMLElement {
 
     // 1. Flightradar24 integration format (attributes.flights)
     if (Array.isArray(attrs.flights)) {
-      const adsbFallback = this._getAdsbFallback();
+      const adsbPool = this._getAdsbPool();
+      const knownCallsigns = new Set();
+
+      attrs.flights.forEach((f) => {
+        const cs = (f.callsign || f.flight_number || '').trim().toUpperCase();
+        if (cs && cs !== 'BLOCKED' && cs !== 'N/A') {
+          knownCallsigns.add(cs);
+        }
+      });
+
       return attrs.flights.map((f) => {
         let rawCallsign = (f.callsign || f.flight_number || f.aircraft_registration || '').trim().toUpperCase();
+        let reg = (f.aircraft_registration || '').trim().toUpperCase();
         const isBlocked = !rawCallsign || rawCallsign === 'BLOCKED' || rawCallsign === 'N/A';
 
-        if (isBlocked && adsbFallback && adsbFallback.callsign) {
-          rawCallsign = `${adsbFallback.callsign} (LADD)`;
-        } else if (isBlocked) {
-          rawCallsign = 'PRIVATE JET';
+        if (isBlocked) {
+          const matched = this._matchAdsbFlight(f, adsbPool, knownCallsigns);
+          if (matched) {
+            knownCallsigns.add(matched.callsign);
+            rawCallsign = `${matched.callsign} (LADD)`;
+            if (!reg && matched.reg) reg = matched.reg;
+          } else {
+            rawCallsign = 'PRIVATE JET';
+          }
         }
 
         return {
@@ -203,7 +361,7 @@ class OverheadSplitflapCard extends HTMLElement {
           dest: (f.airport_destination_code_iata || f.airport_destination_code_icao || '').toUpperCase(),
           aircraftCode: (f.aircraft_code || 'N/A').toUpperCase(),
           aircraftModel: (f.aircraft_model || '').toUpperCase(),
-          reg: (f.aircraft_registration || (adsbFallback && adsbFallback.reg) || '').toUpperCase(),
+          reg,
           heading: f.heading != null ? `${Math.round(f.heading)}DEG` : '',
           altitude: f.altitude != null ? `${Math.round(f.altitude)}FT` : 'GND',
           speed: f.ground_speed != null ? `${Math.round(f.ground_speed)}KT` : '--KT',
@@ -214,21 +372,31 @@ class OverheadSplitflapCard extends HTMLElement {
       });
     }
 
-    // 2. adsb.lol / Nearby Aircraft list sensor format (attributes.aircraft or attributes.nearby)
+    // 2. adsb_nearby "Nearest Aircraft" numbered attributes (aircraft_1, aircraft_2, ...)
+    const numberedList = this._extractNumberedAircraft(attrs);
+    if (numberedList.length > 0) {
+      return numberedList.map((f) => this._normalizeAdsbItem(f));
+    }
+
+    // 3. Array-based ADS-B sensor format (attributes.aircraft or attributes.nearby)
     const list = Array.isArray(attrs.aircraft) ? attrs.aircraft : Array.isArray(attrs.nearby) ? attrs.nearby : [];
     if (list.length > 0) {
       return list.map((f) => this._normalizeAdsbItem(f));
     }
 
-    // 3. adsb.lol / Nearby Aircraft single "Nearest Aircraft" sensor format (top-level attributes)
+    // 4. Single "Closest Aircraft" sensor format (top-level attributes)
     const hasSingleAircraftAttrs =
+      attrs.altitude_ft != null ||
       attrs.alt_baro != null ||
       attrs.altitude != null ||
+      attrs.speed_kts != null ||
       attrs.gs != null ||
       attrs.ground_speed != null ||
       attrs.hex != null ||
       attrs.icao != null ||
+      attrs.aircraft_type != null ||
       attrs.t != null ||
+      attrs.tail != null ||
       attrs.r != null;
 
     if (!this._isInactiveState(stateVal) && hasSingleAircraftAttrs) {
@@ -265,24 +433,20 @@ class OverheadSplitflapCard extends HTMLElement {
     const f = flights[idx];
     const counter = `${idx + 1}/${flights.length}`;
 
-    // Row 1: Callsign / Tail + Counter
     const row1 = this._pad(f.callsign, cols - counter.length) + counter;
 
-    // Row 2: Route if known, otherwise full aircraft model or operator
     const hasRoute = f.origin && f.dest;
     const row2Text = hasRoute
       ? `${f.origin} > ${f.dest}  ${f.airline}`
       : f.aircraftModel || f.airline || 'UNSCHEDULED FLIGHT';
     const row2 = this._pad(row2Text, cols);
 
-    // Row 3: Dep/Arr times if scheduled, otherwise Reg + Heading
     const hasTimes = f.depTime || f.arrTime;
     const row3Text = hasTimes
       ? `DEP ${f.depTime || '--:--'}  ARR ${f.arrTime || '--:--'}`
       : `REG ${f.reg || 'PRIVATE'}  HDG ${f.heading || '--'}`;
     const row3 = this._pad(row3Text, cols);
 
-    // Row 4 & 5: Telemetry
     const row4 = this._pad(`ALT ${f.altitude}  ${f.speed}`, cols);
     const row5 = this._pad(`ACFT ${f.aircraftCode}  ${f.distance}`, cols);
 
@@ -556,8 +720,8 @@ class OverheadSplitflapCardEditor extends HTMLElement {
 
       this._form.computeLabel = (schema) => {
         const labels = {
-          entity: 'Primary Flight Sensor (Flightradar24 or adsb.lol)',
-          adsb_entity: 'Secondary ADS-B Sensor (Optional LADD Unmasking)',
+          entity: 'Primary Flight Sensor (Flightradar24 Current in Area or ADS-B Nearest Aircraft)',
+          adsb_entity: 'Secondary ADS-B Sensor (Select *_nearest_aircraft for LADD Unmasking)',
           title: 'Board Header Title',
           columns: 'Columns (Tiles per Row)',
           cycle_seconds: 'Auto-Cycle Interval (0 = Manual Only)',
