@@ -169,7 +169,7 @@ class OverheadSplitflapCard extends HTMLElement {
         return clean;
       }
     }
-    return 'PRIVATE JET';
+    return 'LADD BLOCKED';
   }
 
   _extractNumberedAircraft(attrs) {
@@ -226,7 +226,7 @@ class OverheadSplitflapCard extends HTMLElement {
       dest: String(f.destination_iata || f.destination_icao || f.destination || '').toUpperCase(),
       aircraftCode: String(f.aircraft_type || f.t || f.type || 'N/A').trim().toUpperCase(),
       aircraftModel: String(f.aircraft_description || f.desc || f.aircraft_model || '').toUpperCase(),
-      reg: cleanReg === 'PRIVATE JET' ? '' : cleanReg,
+      reg: cleanReg === 'LADD BLOCKED' ? '' : cleanReg,
       heading: !Number.isNaN(numericHdg) ? `${Math.round(numericHdg)}DEG` : '',
       altitude: !Number.isNaN(numericAlt) ? (numericAlt <= 0 ? 'GND' : `${Math.round(numericAlt)}FT`) : 'GND',
       speed: !Number.isNaN(numericSpd) ? `${Math.round(numericSpd)}KT` : '--KT',
@@ -284,7 +284,7 @@ class OverheadSplitflapCard extends HTMLElement {
     let bestScore = -Infinity;
 
     for (const candidate of adsbPool) {
-      if (!candidate.callsign || candidate.callsign === 'PRIVATE JET') continue;
+      if (!candidate.callsign || candidate.callsign === 'LADD BLOCKED') continue;
       if (excludedCallsigns.has(candidate.callsign)) continue;
 
       let score = 0;
@@ -380,7 +380,7 @@ class OverheadSplitflapCard extends HTMLElement {
             rawCallsign = `${matched.callsign} (LADD)`;
             if (!reg && matched.reg) reg = matched.reg;
           } else {
-            rawCallsign = 'PRIVATE JET';
+            rawCallsign = 'LADD BLOCKED';
           }
         }
 
