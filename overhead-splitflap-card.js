@@ -121,6 +121,29 @@ class OverheadSplitflapCard extends HTMLElement {
     cells.forEach((cell) => this._clearCellTimers(cell));
   }
 
+  _useMetricDistance() {
+    const lengthUnit = this._hass && this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.length;
+    return lengthUnit === 'km';
+  }
+
+  _formatDistanceFromKm(kmVal) {
+    if (kmVal == null || Number.isNaN(Number(kmVal))) return '';
+    const km = Number(kmVal);
+    if (this._useMetricDistance()) {
+      return `${km.toFixed(1)}KM`;
+    }
+    return `${(km * 0.621371).toFixed(1)}MI`;
+  }
+
+  _formatDistanceFromNm(nmVal) {
+    if (nmVal == null || Number.isNaN(Number(nmVal))) return '';
+    const nm = Number(nmVal);
+    if (this._useMetricDistance()) {
+      return `${(nm * 1.852).toFixed(1)}KM`;
+    }
+    return `${(nm * 1.15078).toFixed(1)}MI`;
+  }
+
   _isInactiveState(stateVal) {
     const inactive = [
       '',
@@ -172,13 +195,20 @@ class OverheadSplitflapCard extends HTMLElement {
     const spd = f.speed_kts != null ? f.speed_kts : f.gs != null ? f.gs : f.ground_speed;
     const hdg = f.heading != null ? f.heading : f.track;
 
-    let numericDst = NaN;
+    let distanceStr = '';
+    let distanceMiles = NaN;
     if (f.distance_km != null && !Number.isNaN(Number(f.distance_km))) {
-      numericDst = Number(f.distance_km) * 0.621371;
-    } else if (f.dst != null) {
-      numericDst = Number(f.dst);
-    } else if (f.distance != null) {
-      numericDst = Number(f.distance);
+      const km = Number(f.distance_km);
+      distanceStr = this._formatDistanceFromKm(km);
+      distanceMiles = km * 0.621371;
+    } else if (f.dst != null && !Number.isNaN(Number(f.dst))) {
+      const nm = Number(f.dst);
+      distanceStr = this._formatDistanceFromNm(nm);
+      distanceMiles = nm * 1.15078;
+    } else if (f.distance != null && !Number.isNaN(Number(f.distance))) {
+      const nm = Number(f.distance);
+      distanceStr = this._formatDistanceFromNm(nm);
+      distanceMiles = nm * 1.15078;
     }
 
     const numericAlt = typeof alt === 'number' ? alt : alt === 'ground' ? 0 : Number(alt);
@@ -200,13 +230,13 @@ class OverheadSplitflapCard extends HTMLElement {
       heading: !Number.isNaN(numericHdg) ? `${Math.round(numericHdg)}DEG` : '',
       altitude: !Number.isNaN(numericAlt) ? (numericAlt <= 0 ? 'GND' : `${Math.round(numericAlt)}FT`) : 'GND',
       speed: !Number.isNaN(numericSpd) ? `${Math.round(numericSpd)}KT` : '--KT',
-      distance: !Number.isNaN(numericDst) ? `${numericDst.toFixed(1)}MI` : '',
+      distance: distanceStr,
       depTime: '',
       arrTime: '',
       _rawAlt: numericAlt,
       _rawSpd: numericSpd,
       _rawHdg: numericHdg,
-      _rawDst: numericDst,
+      _rawDstMiles: distanceMiles,
       _lat: latVal,
       _lon: lonVal,
     };
@@ -248,7 +278,7 @@ class OverheadSplitflapCard extends HTMLElement {
     const frHdg = frFlight.heading != null ? Number(frFlight.heading) : NaN;
     const frLat = frFlight.latitude != null ? Number(frFlight.latitude) : NaN;
     const frLon = frFlight.longitude != null ? Number(frFlight.longitude) : NaN;
-    const frDst = frFlight.distance != null ? Number(frFlight.distance) : NaN;
+    const frDstMiles = frFlight.distance != null ? Number(frFlight.distance) * 0.621371 : NaN;
 
     let bestMatch = null;
     let bestScore = -Infinity;
@@ -282,8 +312,8 @@ class OverheadSplitflapCard extends HTMLElement {
         if (distMiles <= 5) score += 45;
         else if (distMiles <= 12) score += 20;
         else if (distMiles > 25) score -= 40;
-      } else if (!Number.isNaN(frDst) && !Number.isNaN(candidate._rawDst)) {
-        const dstDiff = Math.abs(frDst - candidate._rawDst);
+      } else if (!Number.isNaN(frDstMiles) && !Number.isNaN(candidate._rawDstMiles)) {
+        const dstDiff = Math.abs(frDstMiles - candidate._rawDstMiles);
         if (dstDiff <= 3) score += 30;
         else if (dstDiff <= 8) score += 10;
         else if (dstDiff > 15) score -= 30;
@@ -365,7 +395,7 @@ class OverheadSplitflapCard extends HTMLElement {
           heading: f.heading != null ? `${Math.round(f.heading)}DEG` : '',
           altitude: f.altitude != null ? `${Math.round(f.altitude)}FT` : 'GND',
           speed: f.ground_speed != null ? `${Math.round(f.ground_speed)}KT` : '--KT',
-          distance: f.distance != null ? `${Number(f.distance).toFixed(1)}MI` : '',
+          distance: f.distance != null ? this._formatDistanceFromKm(f.distance) : '',
           depTime: this._formatUnixTime(f.time_scheduled_departure || f.time_real_departure),
           arrTime: this._formatUnixTime(f.time_estimated_arrival || f.time_scheduled_arrival),
         };
