@@ -9,11 +9,33 @@ class OverheadSplitflapCard extends HTMLElement {
     this._cycleTimer = null;
     this._resizeObserver = null;
     this._chars = ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/:.>';
+    this._onVisibilityChange = this._handleVisibilityChange.bind(this);
+  }
+
+  static getConfigElement() {
+    return document.createElement('overhead-splitflap-card-editor');
+  }
+
+  static getStubConfig(hass) {
+    let defaultEntity = 'sensor.flightradar24_current_in_area';
+    if (hass && hass.states && !hass.states[defaultEntity]) {
+      const candidate = Object.keys(hass.states).find(
+        (id) => id.startsWith('sensor.') && (id.includes('flightradar24') || id.includes('adsb'))
+      );
+      if (candidate) defaultEntity = candidate;
+    }
+    return {
+      entity: defaultEntity,
+      title: 'OVERHEAD RADAR',
+      columns: 20,
+      cycle_seconds: 12,
+      flip_speed_ms: 45,
+    };
   }
 
   setConfig(config) {
     if (!config.entity) {
-      throw new Error('Please define an entity (e.g., sensor.flightradar24_current_in_area)');
+      throw new Error('Please select a flight sensor entity.');
     }
     this._config = {
       title: 'OVERHEAD RADAR',
@@ -22,8 +44,12 @@ class OverheadSplitflapCard extends HTMLElement {
       flip_speed_ms: 45,
       ...config,
     };
+    this._lastRenderedLines = [];
     this._renderShell();
-    this._startCycleTimer();
+    if (this.isConnected) {
+      this._resetCycleTimer();
+      this._updateBoard(true);
+    }
   }
 
   set hass(hass) {
@@ -31,19 +57,66 @@ class OverheadSplitflapCard extends HTMLElement {
     this._updateBoard();
   }
 
-  disconnectedCallback() {
-    if (this._cycleTimer) clearInterval(this._cycleTimer);
-    if (this._resizeObserver) this._resizeObserver.disconnect();
+  connectedCallback() {
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+    this._resetCycleTimer();
   }
 
-  _startCycleTimer() {
-    if (this._cycleTimer) clearInterval(this._cycleTimer);
-    if (this._config.cycle_seconds > 0) {
-      this._cycleTimer = setInterval(() => {
-        this._currentIndex++;
-        this._updateBoard();
-      }, this._config.cycle_seconds * 1000);
+  disconnectedCallback() {
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
+    this._stopCycleTimer();
+    if (this._resizeObserver) this._resizeObserver.disconnect();
+    this._clearAllCellTimers();
+  }
+
+  _handleVisibilityChange() {
+    if (!document.hidden) {
+      this._clearAllCellTimers();
+      this._lastRenderedLines = [];
+      this._updateBoard(true);
+      this._resetCycleTimer();
+    } else {
+      this._stopCycleTimer();
     }
+  }
+
+  _stopCycleTimer() {
+    if (this._cycleTimer !== null) {
+      clearInterval(this._cycleTimer);
+      this._cycleTimer = null;
+    }
+  }
+
+  _resetCycleTimer() {
+    this._stopCycleTimer();
+    const seconds = Number(this._config.cycle_seconds);
+    if (seconds > 0) {
+      this._cycleTimer = setInterval(() => {
+        if (!document.hidden) {
+          this._currentIndex++;
+          this._updateBoard();
+        }
+      }, seconds * 1000);
+    }
+  }
+
+  _clearCellTimers(cell) {
+    if (!cell) return;
+    if (cell._flipTimeout) {
+      clearTimeout(cell._flipTimeout);
+      cell._flipTimeout = null;
+    }
+    if (cell._flipInterval) {
+      clearInterval(cell._flipInterval);
+      cell._flipInterval = null;
+    }
+    cell.classList.remove('flipping');
+  }
+
+  _clearAllCellTimers() {
+    if (!this.shadowRoot) return;
+    const cells = this.shadowRoot.querySelectorAll('.flap-cell');
+    cells.forEach((cell) => this._clearCellTimers(cell));
   }
 
   _isInactiveState(stateVal) {
@@ -177,7 +250,7 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _buildBoardLines(flights) {
-    const cols = this._config.columns;
+    const cols = Number(this._config.columns) || 20;
     if (!flights.length) {
       return [
         this._pad('NO AIRCRAFT IN RANGE', cols),
@@ -217,7 +290,7 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _renderShell() {
-    const cols = this._config.columns;
+    const cols = Number(this._config.columns) || 20;
     const rows = 5;
 
     let gridHtml = '';
@@ -245,6 +318,7 @@ class OverheadSplitflapCard extends HTMLElement {
           box-shadow: 0 8px 24px rgba(0,0,0,0.45);
           cursor: pointer;
           user-select: none;
+          -webkit-tap-highlight-color: transparent;
         }
         .header {
           display: flex;
@@ -349,29 +423,39 @@ class OverheadSplitflapCard extends HTMLElement {
     });
     this._resizeObserver.observe(boardEl);
 
-    this.shadowRoot.querySelector('ha-card').addEventListener('click', () => {
+    this.shadowRoot.querySelector('ha-card').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this._resetCycleTimer();
       this._currentIndex++;
       this._updateBoard();
-      this._startCycleTimer();
     });
   }
 
-  _updateBoard() {
+  _updateBoard(snap = false) {
     if (!this._hass || !this._config.entity) return;
     const stateObj = this._hass.states[this._config.entity];
     const flights = this._extractFlights(stateObj);
     const lines = this._buildBoardLines(flights);
+    const immediate = snap || document.hidden;
 
     lines.forEach((line, r) => {
       const prevLine = this._lastRenderedLines[r] || '';
-      if (line === prevLine) return;
+      if (!immediate && line === prevLine) return;
 
       for (let c = 0; c < line.length; c++) {
         const targetChar = line[c];
-        if (prevLine[c] === targetChar) continue;
+        if (!immediate && prevLine[c] === targetChar) continue;
 
         const cell = this.shadowRoot.querySelector(`.flap-cell[data-row="${r}"][data-col="${c}"]`);
-        if (cell) this._animateCell(cell, targetChar, c * 18);
+        if (!cell) continue;
+
+        if (immediate) {
+          this._clearCellTimers(cell);
+          const span = cell.querySelector('span');
+          if (span) span.textContent = targetChar;
+        } else {
+          this._animateCell(cell, targetChar, c * 18);
+        }
       }
     });
 
@@ -379,17 +463,21 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _animateCell(cell, targetChar, delayMs) {
+    this._clearCellTimers(cell);
     const span = cell.querySelector('span');
-    setTimeout(() => {
+
+    cell._flipTimeout = setTimeout(() => {
+      cell._flipTimeout = null;
       let steps = 4 + Math.floor(Math.random() * 5);
-      const interval = setInterval(() => {
+
+      cell._flipInterval = setInterval(() => {
         steps--;
         cell.classList.remove('flipping');
         void cell.offsetWidth;
         cell.classList.add('flipping');
 
         if (steps <= 0) {
-          clearInterval(interval);
+          this._clearCellTimers(cell);
           span.textContent = targetChar;
         } else {
           span.textContent = this._chars[Math.floor(Math.random() * this._chars.length)];
@@ -403,11 +491,114 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 }
 
+class OverheadSplitflapCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._config = {};
+    this._hass = null;
+    this._form = null;
+  }
+
+  setConfig(config) {
+    this._config = {
+      title: 'OVERHEAD RADAR',
+      columns: 20,
+      cycle_seconds: 12,
+      flip_speed_ms: 45,
+      ...config,
+    };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) {
+      this._form.hass = hass;
+    }
+  }
+
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement('ha-form');
+      this._form.schema = [
+        {
+          name: 'entity',
+          required: true,
+          selector: { entity: { domain: 'sensor' } },
+        },
+        {
+          name: 'adsb_entity',
+          selector: { entity: { domain: 'sensor' } },
+        },
+        {
+          name: 'title',
+          selector: { text: {} },
+        },
+        {
+          type: 'grid',
+          name: '',
+          schema: [
+            {
+              name: 'columns',
+              selector: { number: { min: 14, max: 32, mode: 'box' } },
+            },
+            {
+              name: 'cycle_seconds',
+              selector: { number: { min: 0, max: 120, unit_of_measurement: 's', mode: 'box' } },
+            },
+            {
+              name: 'flip_speed_ms',
+              selector: { number: { min: 15, max: 150, unit_of_measurement: 'ms', mode: 'box' } },
+            },
+          ],
+        },
+      ];
+
+      this._form.computeLabel = (schema) => {
+        const labels = {
+          entity: 'Primary Flight Sensor (Flightradar24 or adsb.lol)',
+          adsb_entity: 'Secondary ADS-B Sensor (Optional LADD Unmasking)',
+          title: 'Board Header Title',
+          columns: 'Columns (Tiles per Row)',
+          cycle_seconds: 'Auto-Cycle Interval (0 = Manual Only)',
+          flip_speed_ms: 'Flap Flip Speed',
+        };
+        return labels[schema.name] || schema.name;
+      };
+
+      this._form.addEventListener('value-changed', (ev) => {
+        ev.stopPropagation();
+        const updated = { ...ev.detail.value };
+        if (!updated.adsb_entity) {
+          delete updated.adsb_entity;
+        }
+        this._config = updated;
+        this.dispatchEvent(
+          new CustomEvent('config-changed', {
+            detail: { config: updated },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+
+      this.appendChild(this._form);
+    }
+
+    if (this._hass) {
+      this._form.hass = this._hass;
+    }
+    this._form.data = this._config;
+  }
+}
+
 customElements.define('overhead-splitflap-card', OverheadSplitflapCard);
+customElements.define('overhead-splitflap-card-editor', OverheadSplitflapCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'overhead-splitflap-card',
   name: 'Overhead Split-Flap Radar Card',
   description: 'Displays live overhead flights on a mechanical airport split-flap board.',
+  preview: true,
 });
