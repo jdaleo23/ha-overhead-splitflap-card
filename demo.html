@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Overhead Split-Flap Card Demo</title>
+  <style>
+    body {
+      background: #1c1c1e; /* Matches Home Assistant dark theme background */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      width: 480px; /* Ideal width for a crisp GitHub README GIF */
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <overhead-splitflap-card id="card"></overhead-splitflap-card>
+  </div>
+
+  <!-- Load your actual card JS -->
+  <script src="./overhead-splitflap-card.js"></script>
+
+  <script>
+    const mockHass = {
+      config: { unit_system: { length: 'mi' } },
+      states: {
+        'sensor.flightradar24_current_in_area': {
+          state: '3',
+          attributes: {
+            flights: [
+              {
+                callsign: 'AAL1380',
+                airline_short: 'AMERICAN',
+                airport_origin_code_iata: 'FLL',
+                airport_destination_code_iata: 'PHL',
+                aircraft_code: 'B738',
+                altitude: 3000,
+                ground_speed: 161,
+                distance: 5.2,
+                time_scheduled_departure: Math.floor(Date.now() / 1000) - 7200,
+                time_estimated_arrival: Math.floor(Date.now() / 1000) + 600,
+              },
+              {
+                callsign: 'BLOCKED', // Triggers LADD unmasking!
+                aircraft_code: 'E545',
+                aircraft_model: 'EMBRAER PRAETOR 500',
+                altitude: 3050,
+                ground_speed: 155,
+                heading: 316,
+                latitude: 39.898,
+                longitude: -74.963,
+                distance: 10.1,
+              },
+              {
+                callsign: 'FXC66',
+                aircraft_code: 'S76',
+                aircraft_model: 'SIKORSKY S-76C-2',
+                altitude: 1375,
+                ground_speed: 138,
+                heading: 225,
+                distance: 7.7,
+                time_real_departure: Math.floor(Date.now() / 1000) - 3600,
+              },
+            ],
+          },
+        },
+        'sensor.adsb_nearby_nearest_aircraft': {
+          state: '1 aircraft detected',
+          attributes: {
+            aircraft_1: {
+              flight: 'LXJ337',
+              tail: 'N337FX',
+              aircraft_type: 'E545',
+              altitude_ft: 3050,
+              speed_kts: 156,
+              heading: 316,
+              latitude: 39.898,
+              longitude: -74.963,
+              distance_km: 10.1,
+            },
+          },
+        },
+      },
+    };
+
+    const card = document.getElementById('card');
+    card.setConfig({
+      entity: 'sensor.flightradar24_current_in_area',
+      adsb_entity: 'sensor.adsb_nearby_nearest_aircraft',
+      title: 'OVERHEAD AIRSPACE',
+      columns: 20,
+      cycle_seconds: 4, // Fast 4-second cycle for recording a snappy GIF
+      flip_speed_ms: 45,
+    });
+    card.hass = mockHass;
+  </script>
+</body>
+</html>
