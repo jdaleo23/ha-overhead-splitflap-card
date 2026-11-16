@@ -1,3 +1,11 @@
+[![Release](https://img.shields.io/github/v/release/jdaleo23/ha-overhead-splitflap-card?style=for-the-badge)](https://github.com/jdaleo23/ha-overhead-splitflap-card/releases)
+[![HACS Badge](https://img.shields.io/badge/HACS-custom-blue.svg?style=for-the-badge)](https://github.com/hacs/integration)
+![Downloads](https://img.shields.io/github/downloads/jdaleo23/ha-overhead-splitflap-card/total?style=for-the-badge)
+![Latest Downloads](https://img.shields.io/github/downloads/jdaleo23/ha-overhead-splitflap-card/latest/total?style=for-the-badge)
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-red.svg?style=for-the-badge)](https://paypal.me/jordandaleo)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_☕-red?style=for-the-badge&logo=ko-fi&logoColor=white&labelColor=grey)](https://ko-fi.com/jdaleo23)
+
 # Overhead Split-Flap Radar Card
 
 A mechanical airport-style split-flap (Solari) Lovelace card for Home Assistant that displays live aircraft flying over your home.
