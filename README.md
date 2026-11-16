@@ -10,7 +10,7 @@
 
 A mechanical airport-style split-flap (Solari) Lovelace card for Home Assistant that displays live aircraft flying over your home.
 
-![Overhead Split-Flap Radar Card Preview](preview.png)
+![Overhead Split-Flap Radar Card Preview](demo.gif)
 
 ## Supported Integrations & Required Entities
 
