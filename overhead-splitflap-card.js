@@ -100,8 +100,15 @@ class OverheadSplitflapCard extends HTMLElement {
     }
   }
 
-  _clearCellTimers(cell) {
+  // Stops any running flip on a cell. With finish=true, a flip that was cut short
+  // is completed immediately so the tile never stays stuck on a random glyph.
+  _clearCellTimers(cell, finish = false) {
     if (!cell) return;
+    const interrupted = !!(cell._flipTimeout || cell._flipInterval);
+    if (finish && interrupted && cell._flipTarget != null) {
+      const span = cell.querySelector('span');
+      if (span) span.textContent = cell._flipTarget;
+    }
     if (cell._flipTimeout) {
       clearTimeout(cell._flipTimeout);
       cell._flipTimeout = null;
@@ -116,7 +123,7 @@ class OverheadSplitflapCard extends HTMLElement {
   _clearAllCellTimers() {
     if (!this.shadowRoot) return;
     const cells = this.shadowRoot.querySelectorAll('.flap-cell');
-    cells.forEach((cell) => this._clearCellTimers(cell));
+    cells.forEach((cell) => this._clearCellTimers(cell, true));
   }
 
   _useMetricDistance() {
@@ -602,6 +609,7 @@ class OverheadSplitflapCard extends HTMLElement {
   _animateCell(cell, targetChar, delayMs) {
     this._clearCellTimers(cell);
     const span = cell.querySelector('span');
+    cell._flipTarget = targetChar;
 
     cell._flipTimeout = setTimeout(() => {
       cell._flipTimeout = null;
