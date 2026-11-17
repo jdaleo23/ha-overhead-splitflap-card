@@ -12,36 +12,44 @@ A mechanical airport-style split-flap (Solari) Lovelace card for Home Assistant 
 
 ![Overhead Split-Flap Radar Card Preview](demo.gif)
 
-## Supported Integrations & Required Entities
+## Required & Optional Integrations
 
-This card is a **frontend dashboard card**, it reads flight telemetry from existing Home Assistant flight-tracking integrations rather than polling external APIs directly.
+This card is a **frontend dashboard card**. It reads flight data from existing Home Assistant integrations rather than polling external APIs directly.
 
-You need **at least one** of the following HACS integrations installed and configured for your home coordinates:
-
-### 1. Flightradar24 (Recommended for Commercial Routes & Schedules)
+### 1. Flightradar24 (Required)
 - **Integration:** [AlexandrErohin/home-assistant-flightradar24](https://github.com/AlexandrErohin/home-assistant-flightradar24)
 - **Entity to use:** `sensor.flightradar24_current_in_area` *(Friendly name: **Current in area**)*
-- **What it provides:** Callsign, airline, origin/destination airport codes, scheduled/estimated departure and arrival times, aircraft type, altitude, speed, and distance.
+- **What it provides:** Every row of the board for the vast majority of traffic: callsign, airline, origin/destination, scheduled/estimated departure and arrival times, aircraft type, altitude, speed, and distance.
+- **If it is unavailable:** the board shows `FR24 FEED OFFLINE` instead of partial or mismatched data.
 
-### 2. ADS-B Nearby / adsb.lol (Recommended for Unfiltered & Private Traffic)
+### 2. ADS-B Nearby, Nearest Aircraft (Optional LADD Add-On)
 - **Integration:** [matthewgall/homeassistant-nearbyaircraft](https://github.com/matthewgall/homeassistant-nearbyaircraft)
-- **Entity to use:** `sensor.adsb_nearby_..._nearest_aircraft` *(Friendly name: **Nearest Aircraft**, numbered list icon)*
-- **What it provides:** Unfiltered ADS-B transponder data including private/LADD-blocked tail numbers, military aircraft, aircraft model descriptions, origin/destination airports (when available), altitude, speed, heading, and distance. *(Note: Raw ADS-B feeds do not include scheduled departure or arrival times.)*
+- **Entity to use:** `sensor.adsb_nearby_..._nearest_aircraft` *(Friendly name: **Nearest Aircraft**)*
+- **What it does:** Flightradar24 hides some private jets and helicopters (FAA LADD filtering) and reports them as `BLOCKED`. When `adsb_entity` is set, the card cross-references each blocked flight against your `Nearest Aircraft` list (ICAO aircraft type, GPS proximity, heading, and altitude/speed bands) and shows the real callsign or tail number, for example `LXJ337 (LADD)`. If no match is found it shows `LADD BLOCKED`.
+- **What it does not do:** ADS-B transponders do not broadcast routes, airlines, or schedules, so ADS-B only ever fills in the callsign. Every other row always comes from Flightradar24.
 
-### 3. Hybrid Mode (Best of Both Worlds)
-If you run **both** integrations, set **Primary Flight Sensor** (`entity`) to your Flightradar24 `Current in area` sensor and **Secondary ADS-B Sensor** (`adsb_entity`) to your ADS-B Nearby `Nearest Aircraft` sensor.
+> **Always select `Nearest Aircraft` (`*_nearest_aircraft`)**, not `Closest Aircraft` or `Aircraft in Range`.
+> `Nearest Aircraft` exposes a ranked list of **all** aircraft in your radius (`aircraft_1`, `aircraft_2`, ...), so a blocked jet can still be matched when an airliner is closer. `Closest Aircraft` only holds a single plane.
 
-Whenever Flightradar24 masks a private jet as `BLOCKED` (FAA LADD filtering), the card automatically cross-references all aircraft in your `Nearest Aircraft` sensor using multi-factor telemetry matching (ICAO aircraft type, GPS proximity, compass heading, and altitude/speed bands) to unmask the real tail number while preserving full schedules and route data for commercial flights.
+> **Tip:** Set the same radius in both integrations for the best match rate. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
 
-> **Important, `Nearest Aircraft` vs. `Closest Aircraft` (`adsb_nearby`):**
-> The `adsb_nearby` integration creates several sensors per location. **Always select `Nearest Aircraft` (`*_nearest_aircraft`)** rather than `Closest Aircraft` or `Aircraft in Range`:
-> - **`Nearest Aircraft`** exposes a ranked list of **all** aircraft detected in your radius (`aircraft_1`, `aircraft_2`, etc.), allowing the card to cycle through multiple flights and accurately match LADD-blocked aircraft even when commercial airliners are closer.
-> - **`Closest Aircraft`** only exposes data for the single nearest plane and hides all other traffic in range.
+### What Each Row Shows
 
-> **Future Integration Support:** Support for additional flight and local ADS-B integrations, including **OpenSky Network**, **airplanes.live**, **adsb.fi**, and local **`dump1090` / `readsb`** receivers, is planned for future releases.
+| Row | Content | Source |
+| :--- | :--- | :--- |
+| 1 | Callsign + rotation counter (`AAL1380    1/3`) | Flightradar24 (ADS-B fills in blocked callsigns) |
+| 2 | `ORG > DST  AIRLINE` (`--- > ---  PRIVATE` when unknown) | Flightradar24 |
+| 3 | `DEP HH:MM  ARR HH:MM` (`--:--` when unknown) | Flightradar24 |
+| 4 | `ALT 3000FT  161KT` (`GND` on the ground, `---` if unknown) | Flightradar24 |
+| 5 | `ACFT B738  3.2MI` (`KM` if your Home Assistant uses metric) | Flightradar24 |
+
+The layout is identical for every aircraft, so the board never shifts between commercial, private, and unscheduled flights.
+
+> **Upgrading from v1.3.x:** `entity` must now be your Flightradar24 sensor. Pointing it at an ADS-B sensor is no longer supported and the board will show `FR24 FEED OFFLINE`. Put your ADS-B `Nearest Aircraft` sensor in `adsb_entity` instead.
+
+> **Future Integration Support:** Support for additional local ADS-B sources for LADD unmasking, including **airplanes.live**, **adsb.fi**, and local **`dump1090` / `readsb`** receivers, is planned for future releases.
 
 ---
-
 ## Installation
 
 ### Via HACS
@@ -63,18 +71,17 @@ Whenever Flightradar24 masks a private jet as `BLOCKED` (FAA LADD filtering), th
 2. Search for **Overhead Split-Flap Radar Card** and click it.
 3. Choose your entities from the dropdown menus and adjust your board settings visually, no YAML required:
 
-| Field | Flightradar24 Setup | ADS-B Nearby Setup | Hybrid Setup (Recommended) |
-| :--- | :--- | :--- | :--- |
-| **Primary Flight Sensor** (`entity`) | `sensor.flightradar24_current_in_area` | `sensor.adsb_nearby_..._nearest_aircraft` | `sensor.flightradar24_current_in_area` |
-| **Secondary ADS-B Sensor** (`adsb_entity`) | *Leave blank* | *Leave blank* | `sensor.adsb_nearby_..._nearest_aircraft` |
-
+| Field | Value |
+| :--- | :--- |
+| **Flightradar24 Sensor** (`entity`) | `sensor.flightradar24_current_in_area` *(required)* |
+| **ADS-B Nearest Aircraft Sensor** (`adsb_entity`) | `sensor.adsb_nearby_..._nearest_aircraft` *(optional, enables LADD unmasking)* |
 ### YAML Configuration
 If you prefer YAML, add the card using the manual card editor:
 
 ```yaml
 type: custom:overhead-splitflap-card
 entity: sensor.flightradar24_current_in_area
-adsb_entity: sensor.adsb_nearby_nearest_aircraft # Optional
+adsb_entity: sensor.adsb_nearby_nearest_aircraft # Optional: unmasks LADD-blocked flights
 title: OVERHEAD AIRSPACE
 columns: 20
 cycle_seconds: 12
@@ -85,8 +92,8 @@ flip_speed_ms: 45
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `entity` | string | **Required** | Primary flight sensor (`sensor.flightradar24_current_in_area` or `sensor.adsb_nearby_..._nearest_aircraft`). |
-| `adsb_entity` | string | `null` | Optional `*_nearest_aircraft` sensor used to unmask LADD-blocked flights when using Flightradar24. |
+| `entity` | string | **Required** | Your Flightradar24 `Current in area` sensor (`sensor.flightradar24_current_in_area`). |
+| `adsb_entity` | string | `null` | Optional ADS-B `*_nearest_aircraft` sensor used to unmask LADD-blocked Flightradar24 flights. |
 | `title` | string | `OVERHEAD RADAR` | Header text displayed in the top-left corner of the board. |
 | `columns` | number | `20` | Number of split-flap character tiles per row (`14`-`32`). |
 | `cycle_seconds` | number | `12` | Seconds before auto-cycling to the next overhead aircraft (`0` disables auto-cycle). |
@@ -100,4 +107,4 @@ flip_speed_ms: 45
 - **Customizable Rows & Field Toggles:** Ability to reorder rows, adjust row counts, and include or exclude specific telemetry fields (e.g., squawk code, vertical speed, heading, or registration).
 - **Configurable Timing Controls:** Independent controls for cycle intervals, animation cascade delays, and idle board behavior when airspace is empty.
 - **Optional Mechanical Sound Effects:** Toggleable synthesized split-flap clacking audio when tiles flip.
-- **Expanded Data Sources:** Native attribute parsers for OpenSky Network and local RTL-SDR (`readsb` / `dump1090`) sensors.
+- **Expanded LADD Sources:** Additional ADS-B sources (airplanes.live, adsb.fi, local `readsb` / `dump1090`) for unmasking blocked aircraft.
