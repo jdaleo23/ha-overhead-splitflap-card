@@ -596,12 +596,14 @@ class OverheadSplitflapCard extends HTMLElement {
       </style>
       <ha-card>
         <div class="header">
-          <span>${this._config.title}</span>
+          <span class="title"></span>
           <span>TAP TO CYCLE</span>
         </div>
         <div class="board">${gridHtml}</div>
       </ha-card>
     `;
+
+    this.shadowRoot.querySelector('.header .title').textContent = this._config.title;
 
     const boardEl = this.shadowRoot.querySelector('.board');
     if (this._resizeObserver) this._resizeObserver.disconnect();
