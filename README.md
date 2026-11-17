@@ -33,6 +33,8 @@ This card is a **frontend dashboard card**. It reads flight data from existing H
 
 > **Tip:** Set the same radius in both integrations for the best match rate. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
 
+> **Rate limits:** Both data services limit how often they can be polled, and the limits can change. If a sensor goes `unavailable` with HTTP 429 errors in your Home Assistant log, increase the integration's update interval or choose a different data source. See the [adsb.lol API documentation](https://www.adsb.lol/docs/open-data/api) and the [Flightradar24 integration notes](https://github.com/AlexandrErohin/home-assistant-flightradar24) for current limits.
+
 ### What Each Row Shows
 
 | Row | Content | Source |
