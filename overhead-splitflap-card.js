@@ -367,6 +367,7 @@ class OverheadSplitflapCard extends HTMLElement {
       return {
         callsign: rawCallsign,
         airline: this._cleanAirline(f.airline_short || f.airline),
+        airlineCode: (f.airline_icao || f.airline_iata || '').trim().toUpperCase(),
         origin: (f.airport_origin_code_iata || f.airport_origin_code_icao || '').trim().toUpperCase(),
         dest: (f.airport_destination_code_iata || f.airport_destination_code_icao || '').trim().toUpperCase(),
         aircraftCode: (f.aircraft_code || 'N/A').trim().toUpperCase(),
@@ -395,10 +396,12 @@ class OverheadSplitflapCard extends HTMLElement {
 
   // Fits an airline name into the space left on row 2. Names that already fit are
   // kept as-is; longer ones drop a trailing generic word (DELTA AIR LINES -> DELTA).
-  _fitAirline(name, maxLen) {
+  // If it still does not fit, use the airline's code (AIR FRANCE -> AFR) when known.
+  _fitAirline(name, maxLen, code = '') {
     if (name.length <= maxLen) return name;
-    const shorter = name.replace(/\s+(AIR\s?LINES?|AIRWAYS?|AIR)$/, '');
-    return shorter || name;
+    const shorter = name.replace(/\s+(AIR\s?LINES?|AIRWAYS?|AIR)$/, '') || name;
+    if (shorter.length <= maxLen) return shorter;
+    return code && code.length <= maxLen ? code : shorter;
   }
 
   _pad(str, len) {
@@ -440,7 +443,7 @@ class OverheadSplitflapCard extends HTMLElement {
     // Row 2: Origin > Destination + airline
     const routeText = `${f.origin || '---'} > ${f.dest || '---'}  `;
     const airlineLabel = f.airline
-      ? this._fitAirline(f.airline, cols - routeText.length)
+      ? this._fitAirline(f.airline, cols - routeText.length, f.airlineCode)
       : f.isBlocked
       ? 'PRIVATE'
       : 'UNKNOWN';
