@@ -249,6 +249,14 @@ class OverheadSplitflapCard extends HTMLElement {
       if (frType && frType !== 'N/A' && candType && candType !== 'N/A') {
         if (frType === candType) {
           score += 100;
+        } else if (
+          frType.length >= 3 &&
+          candType.length >= 3 &&
+          frType.slice(0, 3) === candType.slice(0, 3)
+        ) {
+          // Same aircraft family (e.g. E75S vs E75L): the two services label
+          // subtypes differently, so allow it with a lower score.
+          score += 70;
         } else {
           continue;
         }
@@ -358,7 +366,7 @@ class OverheadSplitflapCard extends HTMLElement {
 
       return {
         callsign: rawCallsign,
-        airline: (f.airline_short || f.airline || '').trim().toUpperCase(),
+        airline: this._cleanAirline(f.airline_short || f.airline),
         origin: (f.airport_origin_code_iata || f.airport_origin_code_icao || '').trim().toUpperCase(),
         dest: (f.airport_destination_code_iata || f.airport_destination_code_icao || '').trim().toUpperCase(),
         aircraftCode: (f.aircraft_code || 'N/A').trim().toUpperCase(),
@@ -377,6 +385,20 @@ class OverheadSplitflapCard extends HTMLElement {
     if (!ts) return '';
     const d = new Date(ts * 1000);
     return d.toTimeString().slice(0, 5);
+  }
+
+  // Normalizes an airline name; Flightradar24 reports "Private owner" for private aircraft.
+  _cleanAirline(name) {
+    const clean = String(name || '').trim().toUpperCase();
+    return /^PRIVATE\b/.test(clean) ? 'PRIVATE' : clean;
+  }
+
+  // Fits an airline name into the space left on row 2. Names that already fit are
+  // kept as-is; longer ones drop a trailing generic word (DELTA AIR LINES -> DELTA).
+  _fitAirline(name, maxLen) {
+    if (name.length <= maxLen) return name;
+    const shorter = name.replace(/\s+(AIR\s?LINES?|AIRWAYS?|AIR)$/, '');
+    return shorter || name;
   }
 
   _pad(str, len) {
@@ -416,8 +438,13 @@ class OverheadSplitflapCard extends HTMLElement {
     const row1 = this._pad(f.callsign, cols - counter.length) + counter;
 
     // Row 2: Origin > Destination + airline
-    const airlineLabel = f.airline || (f.isBlocked ? 'PRIVATE' : 'UNSCHEDULED');
-    const row2 = this._pad(`${f.origin || '---'} > ${f.dest || '---'}  ${airlineLabel}`, cols);
+    const routeText = `${f.origin || '---'} > ${f.dest || '---'}  `;
+    const airlineLabel = f.airline
+      ? this._fitAirline(f.airline, cols - routeText.length)
+      : f.isBlocked
+      ? 'PRIVATE'
+      : 'UNKNOWN';
+    const row2 = this._pad(routeText + airlineLabel, cols);
 
     // Row 3: Departure & arrival times
     const row3 = this._pad(`DEP ${f.depTime || '--:--'}  ARR ${f.arrTime || '--:--'}`, cols);
