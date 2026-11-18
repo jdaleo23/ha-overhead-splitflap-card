@@ -1,5 +1,5 @@
 [![Release](https://img.shields.io/github/v/release/jdaleo23/ha-overhead-splitflap-card?style=for-the-badge)](https://github.com/jdaleo23/ha-overhead-splitflap-card/releases)
-[![HACS Badge](https://img.shields.io/badge/HACS-custom-blue.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![HACS Badge](https://img.shields.io/badge/HACS-Default-blue.svg?style=for-the-badge)](https://github.com/hacs/integration)
 ![Downloads](https://img.shields.io/github/downloads/jdaleo23/ha-overhead-splitflap-card/total?style=for-the-badge)
 ![Latest Downloads](https://img.shields.io/github/downloads/jdaleo23/ha-overhead-splitflap-card/latest/total?style=for-the-badge)
 
@@ -55,7 +55,7 @@ The layout is identical for every aircraft, so the board never shifts between co
 ## Installation
 
 ### Via HACS
-1. Open **HACS** in Home Assistant and search for **Overhead Split-Flap Radar Card**. *(If it is not yet listed in the default store, click the three dots `⋮` in the top-right corner, select **Custom repositories**, paste `https://github.com/jdaleo23/ha-overhead-splitflap-card`, and choose **Dashboard**.)*
+1. Open **HACS** in Home Assistant and search for **Overhead Split-Flap Radar Card**.
 2. Click **Download**.
 3. Refresh your browser (`Ctrl+Shift+R` / `Cmd+Shift+R`) or clear cache in the Home Assistant Companion App.
 
