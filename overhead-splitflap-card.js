@@ -1,26 +1,42 @@
 // Finds the Flightradar24 and ADS-B Nearby sensors that are already set up in
 // Home Assistant, so the card and its editor can offer them without typing.
+//   fr24 / adsb       sensors that look like the right feed (used to auto-select)
+//   fr24All / adsbAll every sensor from those integrations (used by the editor
+//                     picker, so a renamed sensor can still be chosen by hand)
+// Flightradar24 also exposes "entered", "exited" and "additional tracked" sensors
+// with a `flights` list; those are never treated as the current-in-area feed.
 function detectSources(hass) {
-  const found = { fr24: [], adsb: [] };
+  const found = { fr24: [], adsb: [], fr24All: [], adsbAll: [] };
   if (!hass || !hass.states) return found;
   const registry = hass.entities || null;
   const ids = registry ? Object.keys(registry) : Object.keys(hass.states);
+  const fr24Weak = [];
   for (const id of ids) {
     if (!id.startsWith('sensor.') || !hass.states[id]) continue;
     const reg = registry ? registry[id] : null;
     const platform = reg ? reg.platform : '';
     const key = reg && reg.translation_key ? reg.translation_key : '';
+    const attrs = hass.states[id].attributes || {};
     if (platform === 'flightradar24' || (!registry && id.includes('flightradar24'))) {
-      const attrs = hass.states[id].attributes || {};
-      if (id.endsWith('_in_area') || key === 'in_area' || Array.isArray(attrs.flights)) {
-        found.fr24.push(id);
-      }
+      found.fr24All.push(id);
+      const otherFeed =
+        ['entered', 'exited', 'additional_tracked'].includes(key) ||
+        /_(entered|exited)_area$|_additional_tracked$/.test(id);
+      if (key === 'in_area' || id.endsWith('_in_area')) found.fr24.push(id);
+      else if (!otherFeed && Array.isArray(attrs.flights)) fr24Weak.push(id);
     } else if (platform === 'adsb_nearby' || (!registry && id.includes('adsb_nearby'))) {
-      if (id.endsWith('_nearest_aircraft') || key === 'nearest_aircraft') {
+      found.adsbAll.push(id);
+      if (
+        key === 'nearest_aircraft' ||
+        id === 'sensor.nearest_aircraft' ||
+        id.endsWith('_nearest_aircraft') ||
+        Object.keys(attrs).some((k) => /^aircraft_\d+$/.test(k))
+      ) {
         found.adsb.push(id);
       }
     }
   }
+  found.fr24.push(...fr24Weak);
   return found;
 }
 class OverheadSplitflapCard extends HTMLElement {
@@ -55,20 +71,34 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   // Which sensors to read. With `entity` set, the config is used as written.
-  // Without it, the card uses the Flightradar24 and ADS-B sensors it finds in
-  // Home Assistant (so a bare `type:` card works). `entity` is null when none exist.
+  // Without it, the card uses the Flightradar24 sensor it finds in Home Assistant
+  // (so a bare `type:` card works), plus the configured or detected ADS-B sensor.
+  // `entity` is null when none exist. Detection is cached until the entity
+  // registry changes; while a source is still missing it is retried every 30 s.
   _sources() {
-    if (this._config.entity) {
-      return { entity: this._config.entity, adsb: this._config.adsb_entity };
-    }
+    const cfg = this._config;
+    if (cfg.entity) return { entity: cfg.entity, adsb: cfg.adsb_entity };
+    const registry = this._hass.entities;
     const cached = this._autoSources;
-    if (cached && this._hass.states[cached.entity]) return cached;
+    const now = Date.now();
+    if (
+      cached &&
+      registry &&
+      cached.registry === registry &&
+      (cached.entity && (cached.adsb || cfg.adsb_entity) ? this._hass.states[cached.entity] : now - cached.at < 30000)
+    ) {
+      return cached;
+    }
     const found = detectSources(this._hass);
-    const sources = { entity: found.fr24[0] || null, adsb: found.adsb[0] || null };
-    this._autoSources = sources.entity ? sources : null;
+    const sources = {
+      entity: found.fr24[0] || null,
+      adsb: cfg.adsb_entity || found.adsb[0] || null,
+      registry,
+      at: now,
+    };
+    this._autoSources = sources;
     return sources;
   }
-
   setConfig(config) {
     this._autoSources = null;
     this._config = {
@@ -741,9 +771,9 @@ class OverheadSplitflapCardEditor extends HTMLElement {
 
   // Limit a sensor picker to the sensors found in Home Assistant, plus the
   // value already configured. With nothing found, the picker stays unfiltered.
-  _entitySelector(detected, current) {
-    if (!detected.length) return { entity: { domain: 'sensor' } };
-    const include = [...new Set([...detected, current].filter(Boolean))];
+  _entitySelector(detected, all, current) {
+    if (!all.length) return { entity: { domain: 'sensor' } };
+    const include = [...new Set([...detected, ...all, current].filter(Boolean))];
     return { entity: { domain: 'sensor', include_entities: include } };
   }
 
@@ -753,11 +783,11 @@ class OverheadSplitflapCardEditor extends HTMLElement {
       {
         name: 'entity',
         required: true,
-        selector: this._entitySelector(found.fr24, this._config.entity),
+        selector: this._entitySelector(found.fr24, found.fr24All, this._config.entity),
       },
       {
         name: 'adsb_entity',
-        selector: this._entitySelector(found.adsb, this._config.adsb_entity),
+        selector: this._entitySelector(found.adsb, found.adsbAll, this._config.adsb_entity),
       },
       {
         name: 'title',
