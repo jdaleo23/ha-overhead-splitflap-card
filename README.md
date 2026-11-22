@@ -31,7 +31,7 @@ This card is a **frontend dashboard card**. It reads flight data from existing H
 > **Always select `Nearest Aircraft` (`*_nearest_aircraft`)**, not `Closest Aircraft` or `Aircraft in Range`.
 > `Nearest Aircraft` exposes a ranked list of **all** aircraft in your radius (`aircraft_1`, `aircraft_2`, ...), so a blocked jet can still be matched when an airliner is closer. `Closest Aircraft` only holds a single plane.
 
-> **Tip:** Set the same radius in both integrations for the best match rate. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
+> **Tip:** Make the ADS-B radius a bit larger than the Flightradar24 radius; a couple of miles is plenty. Flightradar24 searches a square area while ADS-B Nearby searches a circle, so with equal radii the corners of the square fall outside the circle. A plane there is already on your board but not yet seen by ADS-B, so it shows as `LADD BLOCKED`. The reverse is harmless: the board is driven by Flightradar24, so a plane ADS-B sees first only appears once Flightradar24 sees it too. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
 
 > **Rate limits:** Both data services limit how often they can be polled, and the limits can change. If a sensor goes `unavailable` with HTTP 429 errors in your Home Assistant log, increase the integration's update interval or choose a different data source. See the [adsb.lol API documentation](https://www.adsb.lol/docs/open-data/api) and the [Flightradar24 integration notes](https://github.com/AlexandrErohin/home-assistant-flightradar24) for current limits.
 
@@ -71,14 +71,23 @@ The layout is identical for every aircraft, so the board never shifts between co
 ### Visual Card Editor (Recommended)
 1. Open your dashboard, click **Edit Dashboard** (pencil icon), and select **+ Add Card**.
 2. Search for **Overhead Split-Flap Radar Card** and click it.
-3. Choose your entities from the dropdown menus and adjust your board settings visually, no YAML required:
+3. The card finds your Flightradar24 and ADS-B Nearby sensors and fills them in automatically. Confirm them (or pick different ones) and adjust your board settings visually, no YAML required:
 
 | Field | Value |
 | :--- | :--- |
 | **Flightradar24 Sensor** (`entity`) | `sensor.flightradar24_current_in_area` *(required)* |
 | **ADS-B Nearest Aircraft Sensor** (`adsb_entity`) | `sensor.adsb_nearby_..._nearest_aircraft` *(optional, enables LADD unmasking)* |
+
 ### YAML Configuration
-If you prefer YAML, add the card using the manual card editor:
+You can pick **Overhead Split-Flap Radar Card** from the **Community cards** list (see the visual editor above), or choose the **Manual** card and enter just this:
+
+```yaml
+type: custom:overhead-splitflap-card
+```
+
+The card finds your Flightradar24 and ADS-B Nearby sensors on its own. Switch to the visual editor afterwards to adjust any settings. If no Flightradar24 sensor is found, the board tells you to pick one in the visual editor.
+
+If you prefer to write everything in YAML, these are all the options:
 
 ```yaml
 type: custom:overhead-splitflap-card
@@ -94,8 +103,8 @@ flip_speed_ms: 45
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `entity` | string | **Required** | Your Flightradar24 `Current in area` sensor (`sensor.flightradar24_current_in_area`). |
-| `adsb_entity` | string | `null` | Optional ADS-B `*_nearest_aircraft` sensor used to unmask LADD-blocked Flightradar24 flights. |
+| `entity` | string | Auto-detected | Your Flightradar24 `Current in area` sensor (`sensor.flightradar24_current_in_area`). If left out, the card uses the sensor it finds (and the ADS-B sensor below). |
+| `adsb_entity` | string | `null` | Optional ADS-B `*_nearest_aircraft` sensor used to unmask LADD-blocked Flightradar24 flights. Auto-detected only when `entity` is also left out. |
 | `title` | string | `OVERHEAD RADAR` | Header text displayed in the top-left corner of the board. |
 | `columns` | number | `20` | Number of split-flap character tiles per row (`14`-`32`). |
 | `cycle_seconds` | number | `12` | Seconds before auto-cycling to the next overhead aircraft (`0` disables auto-cycle). |

@@ -1,3 +1,44 @@
+// Finds the Flightradar24 and ADS-B Nearby sensors that are already set up in
+// Home Assistant, so the card and its editor can offer them without typing.
+//   fr24 / adsb       sensors that look like the right feed (used to auto-select)
+//   fr24All / adsbAll every sensor from those integrations (used by the editor
+//                     picker, so a renamed sensor can still be chosen by hand)
+// Flightradar24 also exposes "entered", "exited" and "additional tracked" sensors
+// with a `flights` list; those are never treated as the current-in-area feed.
+function detectSources(hass) {
+  const found = { fr24: [], adsb: [], fr24All: [], adsbAll: [] };
+  if (!hass || !hass.states) return found;
+  const registry = hass.entities || null;
+  const ids = registry ? Object.keys(registry) : Object.keys(hass.states);
+  const fr24Weak = [];
+  for (const id of ids) {
+    if (!id.startsWith('sensor.') || !hass.states[id]) continue;
+    const reg = registry ? registry[id] : null;
+    const platform = reg ? reg.platform : '';
+    const key = reg && reg.translation_key ? reg.translation_key : '';
+    const attrs = hass.states[id].attributes || {};
+    if (platform === 'flightradar24' || (!registry && id.includes('flightradar24'))) {
+      found.fr24All.push(id);
+      const otherFeed =
+        ['entered', 'exited', 'additional_tracked'].includes(key) ||
+        /_(entered|exited)_area$|_additional_tracked$/.test(id);
+      if (key === 'in_area' || id.endsWith('_in_area')) found.fr24.push(id);
+      else if (!otherFeed && Array.isArray(attrs.flights)) fr24Weak.push(id);
+    } else if (platform === 'adsb_nearby' || (!registry && id.includes('adsb_nearby'))) {
+      found.adsbAll.push(id);
+      if (
+        key === 'nearest_aircraft' ||
+        id === 'sensor.nearest_aircraft' ||
+        id.endsWith('_nearest_aircraft') ||
+        Object.keys(attrs).some((k) => /^aircraft_\d+$/.test(k))
+      ) {
+        found.adsb.push(id);
+      }
+    }
+  }
+  found.fr24.push(...fr24Weak);
+  return found;
+}
 class OverheadSplitflapCard extends HTMLElement {
   constructor() {
     super();
@@ -17,26 +58,49 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    let defaultEntity = 'sensor.flightradar24_current_in_area';
-    if (hass && hass.states && !hass.states[defaultEntity]) {
-      const candidate = Object.keys(hass.states).find(
-        (id) => id.startsWith('sensor.') && id.includes('flightradar24')
-      );
-      if (candidate) defaultEntity = candidate;
-    }
-    return {
-      entity: defaultEntity,
+    const found = detectSources(hass);
+    const config = {
+      entity: found.fr24[0] || 'sensor.flightradar24_current_in_area',
       title: 'OVERHEAD RADAR',
       columns: 20,
       cycle_seconds: 12,
       flip_speed_ms: 45,
     };
+    if (found.adsb[0]) config.adsb_entity = found.adsb[0];
+    return config;
   }
 
-  setConfig(config) {
-    if (!config.entity) {
-      throw new Error('Please select your Flightradar24 sensor entity.');
+  // Which sensors to read. With `entity` set, the config is used as written.
+  // Without it, the card uses the Flightradar24 sensor it finds in Home Assistant
+  // (so a bare `type:` card works), plus the configured or detected ADS-B sensor.
+  // `entity` is null when none exist. Detection is cached until the entity
+  // registry changes; while a source is still missing it is retried every 30 s.
+  _sources() {
+    const cfg = this._config;
+    if (cfg.entity) return { entity: cfg.entity, adsb: cfg.adsb_entity };
+    const registry = this._hass.entities;
+    const cached = this._autoSources;
+    const now = Date.now();
+    if (
+      cached &&
+      registry &&
+      cached.registry === registry &&
+      (cached.entity && (cached.adsb || cfg.adsb_entity) ? this._hass.states[cached.entity] : now - cached.at < 30000)
+    ) {
+      return cached;
     }
+    const found = detectSources(this._hass);
+    const sources = {
+      entity: found.fr24[0] || null,
+      adsb: cfg.adsb_entity || found.adsb[0] || null,
+      registry,
+      at: now,
+    };
+    this._autoSources = sources;
+    return sources;
+  }
+  setConfig(config) {
+    this._autoSources = null;
     this._config = {
       title: 'OVERHEAD RADAR',
       columns: 20,
@@ -204,8 +268,10 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _getAdsbPool() {
-    if (!this._config.adsb_entity || !this._hass) return [];
-    const adsbState = this._hass.states[this._config.adsb_entity];
+    if (!this._hass) return [];
+    const adsbEntity = this._sources().adsb;
+    if (!adsbEntity) return [];
+    const adsbState = this._hass.states[adsbEntity];
     if (!adsbState) return [];
 
     const stateVal = String(adsbState.state || '').trim().toLowerCase();
@@ -409,6 +475,14 @@ class OverheadSplitflapCard extends HTMLElement {
     return clean.length >= len ? clean.slice(0, len) : clean + ' '.repeat(len - clean.length);
   }
 
+  // Shown when no Flightradar24 sensor is configured or detected.
+  _setupLines() {
+    const cols = Number(this._config.columns) || 20;
+    return ['SETUP NEEDED', 'USE THE VISUAL', 'EDITOR TO PICK', 'YOUR FR24', 'SENSOR'].map((line) =>
+      this._pad(line, cols)
+    );
+  }
+
   _buildBoardLines(result) {
     const cols = Number(this._config.columns) || 20;
 
@@ -606,10 +680,11 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _updateBoard(snap = false) {
-    if (!this._hass || !this._config.entity) return;
-    const stateObj = this._hass.states[this._config.entity];
-    const result = this._extractFlights(stateObj);
-    const lines = this._buildBoardLines(result);
+    if (!this._hass) return;
+    const entity = this._sources().entity;
+    const lines = entity
+      ? this._buildBoardLines(this._extractFlights(this._hass.states[entity]))
+      : this._setupLines();
     const immediate = snap || document.hidden;
 
     lines.forEach((line, r) => {
@@ -672,6 +747,7 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._form = null;
+    this._schemaSig = '';
   }
 
   setConfig(config) {
@@ -689,45 +765,67 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     this._hass = hass;
     if (this._form) {
       this._form.hass = hass;
+      this._refreshSchema();
+    }
+  }
+
+  // Limit a sensor picker to the sensors found in Home Assistant, plus the
+  // value already configured. With nothing found, the picker stays unfiltered.
+  _entitySelector(detected, all, current) {
+    if (!all.length) return { entity: { domain: 'sensor' } };
+    const include = [...new Set([...detected, ...all, current].filter(Boolean))];
+    return { entity: { domain: 'sensor', include_entities: include } };
+  }
+
+  _buildSchema() {
+    const found = detectSources(this._hass);
+    return [
+      {
+        name: 'entity',
+        required: true,
+        selector: this._entitySelector(found.fr24, found.fr24All, this._config.entity),
+      },
+      {
+        name: 'adsb_entity',
+        selector: this._entitySelector(found.adsb, found.adsbAll, this._config.adsb_entity),
+      },
+      {
+        name: 'title',
+        selector: { text: {} },
+      },
+      {
+        type: 'grid',
+        name: '',
+        schema: [
+          {
+            name: 'columns',
+            selector: { number: { min: 14, max: 32, mode: 'box' } },
+          },
+          {
+            name: 'cycle_seconds',
+            selector: { number: { min: 0, max: 120, unit_of_measurement: 's', mode: 'box' } },
+          },
+          {
+            name: 'flip_speed_ms',
+            selector: { number: { min: 15, max: 150, unit_of_measurement: 'ms', mode: 'box' } },
+          },
+        ],
+      },
+    ];
+  }
+
+  _refreshSchema() {
+    const schema = this._buildSchema();
+    const sig = JSON.stringify(schema.slice(0, 2));
+    if (sig !== this._schemaSig) {
+      this._schemaSig = sig;
+      this._form.schema = schema;
     }
   }
 
   _render() {
     if (!this._form) {
       this._form = document.createElement('ha-form');
-      this._form.schema = [
-        {
-          name: 'entity',
-          required: true,
-          selector: { entity: { domain: 'sensor' } },
-        },
-        {
-          name: 'adsb_entity',
-          selector: { entity: { domain: 'sensor' } },
-        },
-        {
-          name: 'title',
-          selector: { text: {} },
-        },
-        {
-          type: 'grid',
-          name: '',
-          schema: [
-            {
-              name: 'columns',
-              selector: { number: { min: 14, max: 32, mode: 'box' } },
-            },
-            {
-              name: 'cycle_seconds',
-              selector: { number: { min: 0, max: 120, unit_of_measurement: 's', mode: 'box' } },
-            },
-            {
-              name: 'flip_speed_ms',
-              selector: { number: { min: 15, max: 150, unit_of_measurement: 'ms', mode: 'box' } },
-            },
-          ],
-        },
-      ];
 
       this._form.computeLabel = (schema) => {
         const labels = {
@@ -763,10 +861,10 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     if (this._hass) {
       this._form.hass = this._hass;
     }
+    this._refreshSchema();
     this._form.data = this._config;
   }
 }
-
 customElements.define('overhead-splitflap-card', OverheadSplitflapCard);
 customElements.define('overhead-splitflap-card-editor', OverheadSplitflapCardEditor);
 
