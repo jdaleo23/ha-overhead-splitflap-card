@@ -115,8 +115,7 @@ flip_speed_ms: 45
 
 ## Support & Community
 * **Found a bug?** Please [open an issue](https://github.com/jdaleo23/ha-overhead-splitflap-card/issues).
-* **Have a question?** Join the [Discussions](https://github.com/jdaleo23/ha-overhead-splitflap-card/discussions) to ask questions or share your board setup.
-* **Feature Requests:** Have an idea for a new feature? Let's talk about it in the [Discussions](https://github.com/jdaleo23/ha-overhead-splitflap-card/discussions) tab!
+* **Questions or Requests:** Let's talk about it in the [Discussions](https://github.com/jdaleo23/ha-overhead-splitflap-card/discussions) tab!
 * **Like it?** A ⭐ on the repo helps other people find it.
 
 If you find this card useful, consider supporting the project:
