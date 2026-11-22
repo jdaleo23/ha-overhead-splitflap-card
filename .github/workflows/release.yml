@@ -1,12 +1,9 @@
 name: Attach card to release
-
 on:
   release:
     types: [published]
-
 permissions:
   contents: write
-
 jobs:
   attach:
     name: Upload card file
@@ -17,9 +14,18 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
           persist-credentials: false
-
       - name: Upload overhead-splitflap-card.js to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" overhead-splitflap-card.js --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Add feedback footer to the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          body="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+          if ! grep -q "helps other people find it" <<< "$body"; then
+            footer="$(printf '\n\n## Feedback\n\nFound a bug or have an idea? [Open an issue](https://github.com/%s/issues) or start a [Discussion](https://github.com/%s/discussions).\n\nIf you find the card useful, a ⭐ on the [repo](https://github.com/%s) helps other people find it.\n' "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY")"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "${body}${footer}"
+          fi
