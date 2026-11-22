@@ -79,7 +79,7 @@ The layout is identical for every aircraft, so the board never shifts between co
 | **ADS-B Nearest Aircraft Sensor** (`adsb_entity`) | `sensor.adsb_nearby_..._nearest_aircraft` *(optional, enables LADD unmasking)* |
 
 ### YAML Configuration
-The quickest way is to add the **Manual** card and enter just this:
+You can pick **Overhead Split-Flap Radar Card** from the **Community cards** list (see the visual editor above), or choose the **Manual** card and enter just this:
 
 ```yaml
 type: custom:overhead-splitflap-card
