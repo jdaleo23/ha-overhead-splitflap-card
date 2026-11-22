@@ -766,7 +766,19 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     if (this._form) {
       this._form.hass = hass;
       this._refreshSchema();
+      if (!this._config.entity) this._form.data = this._formData();
     }
+  }
+
+  // With `entity` left out, the card runs on the sensors it detects. Show those
+  // in the form so it is clear what is in use; they are saved once something is edited.
+  _formData() {
+    if (this._config.entity || !this._hass) return this._config;
+    const found = detectSources(this._hass);
+    const data = { ...this._config };
+    if (found.fr24[0]) data.entity = found.fr24[0];
+    if (!data.adsb_entity && found.adsb[0]) data.adsb_entity = found.adsb[0];
+    return data;
   }
 
   // Limit a sensor picker to the sensors found in Home Assistant, plus the
@@ -862,7 +874,7 @@ class OverheadSplitflapCardEditor extends HTMLElement {
       this._form.hass = this._hass;
     }
     this._refreshSchema();
-    this._form.data = this._config;
+    this._form.data = this._formData();
   }
 }
 customElements.define('overhead-splitflap-card', OverheadSplitflapCard);
