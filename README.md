@@ -31,7 +31,7 @@ This card is a **frontend dashboard card**. It reads flight data from existing H
 > **Always select `Nearest Aircraft` (`*_nearest_aircraft`)**, not `Closest Aircraft` or `Aircraft in Range`.
 > `Nearest Aircraft` exposes a ranked list of **all** aircraft in your radius (`aircraft_1`, `aircraft_2`, ...), so a blocked jet can still be matched when an airliner is closer. `Closest Aircraft` only holds a single plane.
 
-> **Tip:** Set the same radius in both integrations for the best match rate. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
+> **Tip:** Make the ADS-B radius a bit larger than the Flightradar24 radius; a couple of miles is plenty. Flightradar24 searches a square area while ADS-B Nearby searches a circle, so with equal radii the corners of the square fall outside the circle. A plane there is already on your board but not yet seen by ADS-B, so it shows as `LADD BLOCKED`. The reverse is harmless: the board is driven by Flightradar24, so a plane ADS-B sees first only appears once Flightradar24 sees it too. Flightradar24's radius is in meters (for example `8047` m is about 5 miles).
 
 > **Rate limits:** Both data services limit how often they can be polled, and the limits can change. If a sensor goes `unavailable` with HTTP 429 errors in your Home Assistant log, increase the integration's update interval or choose a different data source. See the [adsb.lol API documentation](https://www.adsb.lol/docs/open-data/api) and the [Flightradar24 integration notes](https://github.com/AlexandrErohin/home-assistant-flightradar24) for current limits.
 
