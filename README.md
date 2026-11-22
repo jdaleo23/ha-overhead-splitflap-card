@@ -110,3 +110,9 @@ flip_speed_ms: 45
 - **Configurable Timing Controls:** Independent controls for cycle intervals, animation cascade delays, and idle board behavior when airspace is empty.
 - **Optional Mechanical Sound Effects:** Toggleable synthesized split-flap clacking audio when tiles flip.
 - **Expanded LADD Sources:** Additional ADS-B sources (airplanes.live, adsb.fi, local `readsb` / `dump1090`) for unmasking blocked aircraft.
+
+---
+
+## Feedback & Support
+
+Found a bug or have an idea? [Open an issue](https://github.com/jdaleo23/ha-overhead-splitflap-card/issues). If you find the card useful, a star on the repo helps other people find it.
