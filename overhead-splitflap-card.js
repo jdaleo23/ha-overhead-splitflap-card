@@ -54,10 +54,23 @@ class OverheadSplitflapCard extends HTMLElement {
     return config;
   }
 
-  setConfig(config) {
-    if (!config.entity) {
-      throw new Error('Please select your Flightradar24 sensor entity.');
+  // Which sensors to read. With `entity` set, the config is used as written.
+  // Without it, the card uses the Flightradar24 and ADS-B sensors it finds in
+  // Home Assistant (so a bare `type:` card works). `entity` is null when none exist.
+  _sources() {
+    if (this._config.entity) {
+      return { entity: this._config.entity, adsb: this._config.adsb_entity };
     }
+    const cached = this._autoSources;
+    if (cached && this._hass.states[cached.entity]) return cached;
+    const found = detectSources(this._hass);
+    const sources = { entity: found.fr24[0] || null, adsb: found.adsb[0] || null };
+    this._autoSources = sources.entity ? sources : null;
+    return sources;
+  }
+
+  setConfig(config) {
+    this._autoSources = null;
     this._config = {
       title: 'OVERHEAD RADAR',
       columns: 20,
@@ -225,8 +238,10 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _getAdsbPool() {
-    if (!this._config.adsb_entity || !this._hass) return [];
-    const adsbState = this._hass.states[this._config.adsb_entity];
+    if (!this._hass) return [];
+    const adsbEntity = this._sources().adsb;
+    if (!adsbEntity) return [];
+    const adsbState = this._hass.states[adsbEntity];
     if (!adsbState) return [];
 
     const stateVal = String(adsbState.state || '').trim().toLowerCase();
@@ -430,6 +445,14 @@ class OverheadSplitflapCard extends HTMLElement {
     return clean.length >= len ? clean.slice(0, len) : clean + ' '.repeat(len - clean.length);
   }
 
+  // Shown when no Flightradar24 sensor is configured or detected.
+  _setupLines() {
+    const cols = Number(this._config.columns) || 20;
+    return ['SETUP NEEDED', 'USE THE VISUAL', 'EDITOR TO PICK', 'YOUR FR24', 'SENSOR'].map((line) =>
+      this._pad(line, cols)
+    );
+  }
+
   _buildBoardLines(result) {
     const cols = Number(this._config.columns) || 20;
 
@@ -627,10 +650,11 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   _updateBoard(snap = false) {
-    if (!this._hass || !this._config.entity) return;
-    const stateObj = this._hass.states[this._config.entity];
-    const result = this._extractFlights(stateObj);
-    const lines = this._buildBoardLines(result);
+    if (!this._hass) return;
+    const entity = this._sources().entity;
+    const lines = entity
+      ? this._buildBoardLines(this._extractFlights(this._hass.states[entity]))
+      : this._setupLines();
     const immediate = snap || document.hidden;
 
     lines.forEach((line, r) => {

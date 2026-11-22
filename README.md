@@ -77,8 +77,17 @@ The layout is identical for every aircraft, so the board never shifts between co
 | :--- | :--- |
 | **Flightradar24 Sensor** (`entity`) | `sensor.flightradar24_current_in_area` *(required)* |
 | **ADS-B Nearest Aircraft Sensor** (`adsb_entity`) | `sensor.adsb_nearby_..._nearest_aircraft` *(optional, enables LADD unmasking)* |
+
 ### YAML Configuration
-If you prefer YAML, add the card using the manual card editor:
+The quickest way is to add the **Manual** card and enter just this:
+
+```yaml
+type: custom:overhead-splitflap-card
+```
+
+The card finds your Flightradar24 and ADS-B Nearby sensors on its own. Switch to the visual editor afterwards to adjust any settings. If no Flightradar24 sensor is found, the board tells you to pick one in the visual editor.
+
+If you prefer to write everything in YAML, these are all the options:
 
 ```yaml
 type: custom:overhead-splitflap-card
@@ -94,8 +103,8 @@ flip_speed_ms: 45
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `entity` | string | **Required** | Your Flightradar24 `Current in area` sensor (`sensor.flightradar24_current_in_area`). |
-| `adsb_entity` | string | `null` | Optional ADS-B `*_nearest_aircraft` sensor used to unmask LADD-blocked Flightradar24 flights. |
+| `entity` | string | Auto-detected | Your Flightradar24 `Current in area` sensor (`sensor.flightradar24_current_in_area`). If left out, the card uses the sensor it finds (and the ADS-B sensor below). |
+| `adsb_entity` | string | `null` | Optional ADS-B `*_nearest_aircraft` sensor used to unmask LADD-blocked Flightradar24 flights. Auto-detected only when `entity` is also left out. |
 | `title` | string | `OVERHEAD RADAR` | Header text displayed in the top-left corner of the board. |
 | `columns` | number | `20` | Number of split-flap character tiles per row (`14`-`32`). |
 | `cycle_seconds` | number | `12` | Seconds before auto-cycling to the next overhead aircraft (`0` disables auto-cycle). |
