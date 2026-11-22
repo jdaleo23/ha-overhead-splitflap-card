@@ -71,7 +71,7 @@ The layout is identical for every aircraft, so the board never shifts between co
 ### Visual Card Editor (Recommended)
 1. Open your dashboard, click **Edit Dashboard** (pencil icon), and select **+ Add Card**.
 2. Search for **Overhead Split-Flap Radar Card** and click it.
-3. Choose your entities from the dropdown menus and adjust your board settings visually, no YAML required:
+3. The card finds your Flightradar24 and ADS-B Nearby sensors and fills them in automatically. Confirm them (or pick different ones) and adjust your board settings visually, no YAML required:
 
 | Field | Value |
 | :--- | :--- |

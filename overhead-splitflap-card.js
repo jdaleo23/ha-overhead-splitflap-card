@@ -1,3 +1,28 @@
+// Finds the Flightradar24 and ADS-B Nearby sensors that are already set up in
+// Home Assistant, so the card and its editor can offer them without typing.
+function detectSources(hass) {
+  const found = { fr24: [], adsb: [] };
+  if (!hass || !hass.states) return found;
+  const registry = hass.entities || null;
+  const ids = registry ? Object.keys(registry) : Object.keys(hass.states);
+  for (const id of ids) {
+    if (!id.startsWith('sensor.') || !hass.states[id]) continue;
+    const reg = registry ? registry[id] : null;
+    const platform = reg ? reg.platform : '';
+    const key = reg && reg.translation_key ? reg.translation_key : '';
+    if (platform === 'flightradar24' || (!registry && id.includes('flightradar24'))) {
+      const attrs = hass.states[id].attributes || {};
+      if (id.endsWith('_in_area') || key === 'in_area' || Array.isArray(attrs.flights)) {
+        found.fr24.push(id);
+      }
+    } else if (platform === 'adsb_nearby' || (!registry && id.includes('adsb_nearby'))) {
+      if (id.endsWith('_nearest_aircraft') || key === 'nearest_aircraft') {
+        found.adsb.push(id);
+      }
+    }
+  }
+  return found;
+}
 class OverheadSplitflapCard extends HTMLElement {
   constructor() {
     super();
@@ -17,20 +42,16 @@ class OverheadSplitflapCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    let defaultEntity = 'sensor.flightradar24_current_in_area';
-    if (hass && hass.states && !hass.states[defaultEntity]) {
-      const candidate = Object.keys(hass.states).find(
-        (id) => id.startsWith('sensor.') && id.includes('flightradar24')
-      );
-      if (candidate) defaultEntity = candidate;
-    }
-    return {
-      entity: defaultEntity,
+    const found = detectSources(hass);
+    const config = {
+      entity: found.fr24[0] || 'sensor.flightradar24_current_in_area',
       title: 'OVERHEAD RADAR',
       columns: 20,
       cycle_seconds: 12,
       flip_speed_ms: 45,
     };
+    if (found.adsb[0]) config.adsb_entity = found.adsb[0];
+    return config;
   }
 
   setConfig(config) {
@@ -672,6 +693,7 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._form = null;
+    this._schemaSig = '';
   }
 
   setConfig(config) {
@@ -689,45 +711,67 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     this._hass = hass;
     if (this._form) {
       this._form.hass = hass;
+      this._refreshSchema();
+    }
+  }
+
+  // Limit a sensor picker to the sensors found in Home Assistant, plus the
+  // value already configured. With nothing found, the picker stays unfiltered.
+  _entitySelector(detected, current) {
+    if (!detected.length) return { entity: { domain: 'sensor' } };
+    const include = [...new Set([...detected, current].filter(Boolean))];
+    return { entity: { domain: 'sensor', include_entities: include } };
+  }
+
+  _buildSchema() {
+    const found = detectSources(this._hass);
+    return [
+      {
+        name: 'entity',
+        required: true,
+        selector: this._entitySelector(found.fr24, this._config.entity),
+      },
+      {
+        name: 'adsb_entity',
+        selector: this._entitySelector(found.adsb, this._config.adsb_entity),
+      },
+      {
+        name: 'title',
+        selector: { text: {} },
+      },
+      {
+        type: 'grid',
+        name: '',
+        schema: [
+          {
+            name: 'columns',
+            selector: { number: { min: 14, max: 32, mode: 'box' } },
+          },
+          {
+            name: 'cycle_seconds',
+            selector: { number: { min: 0, max: 120, unit_of_measurement: 's', mode: 'box' } },
+          },
+          {
+            name: 'flip_speed_ms',
+            selector: { number: { min: 15, max: 150, unit_of_measurement: 'ms', mode: 'box' } },
+          },
+        ],
+      },
+    ];
+  }
+
+  _refreshSchema() {
+    const schema = this._buildSchema();
+    const sig = JSON.stringify(schema.slice(0, 2));
+    if (sig !== this._schemaSig) {
+      this._schemaSig = sig;
+      this._form.schema = schema;
     }
   }
 
   _render() {
     if (!this._form) {
       this._form = document.createElement('ha-form');
-      this._form.schema = [
-        {
-          name: 'entity',
-          required: true,
-          selector: { entity: { domain: 'sensor' } },
-        },
-        {
-          name: 'adsb_entity',
-          selector: { entity: { domain: 'sensor' } },
-        },
-        {
-          name: 'title',
-          selector: { text: {} },
-        },
-        {
-          type: 'grid',
-          name: '',
-          schema: [
-            {
-              name: 'columns',
-              selector: { number: { min: 14, max: 32, mode: 'box' } },
-            },
-            {
-              name: 'cycle_seconds',
-              selector: { number: { min: 0, max: 120, unit_of_measurement: 's', mode: 'box' } },
-            },
-            {
-              name: 'flip_speed_ms',
-              selector: { number: { min: 15, max: 150, unit_of_measurement: 'ms', mode: 'box' } },
-            },
-          ],
-        },
-      ];
 
       this._form.computeLabel = (schema) => {
         const labels = {
@@ -763,10 +807,10 @@ class OverheadSplitflapCardEditor extends HTMLElement {
     if (this._hass) {
       this._form.hass = this._hass;
     }
+    this._refreshSchema();
     this._form.data = this._config;
   }
 }
-
 customElements.define('overhead-splitflap-card', OverheadSplitflapCard);
 customElements.define('overhead-splitflap-card-editor', OverheadSplitflapCardEditor);
 
